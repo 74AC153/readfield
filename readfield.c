@@ -45,8 +45,13 @@ void do_help(void)
 	printf("-e <endian>      b(ig) l(ittle) n(ative)\n");
 	printf("-d <disp fmt>    h(ex) d(ec) a(scii)\n");
 	printf("-o [+]<offset>   offset, '+' for relative to last specified\n");
+	printf("                 <offset> can be formatted %%<varname> (see -s)\n");
+	printf("                 actual offset value is <offset> * <off-step> (see -m)\n");
+	printf("-m <off-step>    set step size to <off-step> (see -o)\n");
 	printf("-l <label>       field label\n");
 	printf("-p <repeat>      print <repeat> times sequentially\n");
+	printf("                 <repeat> can be formatted %%<varname> (see -s)\n");
+	printf("-s <varname>     convert current value to S64, save into variable <varname>\n");
 }
 
 void print_char(int c)
@@ -116,6 +121,112 @@ void conv_from_endian(endian_t end, void *buf, size_t len)
 	}
 }
 
+union val_union {
+	uint8_t ui8;
+	int8_t i8;
+	uint16_t ui16;
+	int16_t i16;
+	uint32_t ui32;
+	int32_t i32;
+	uint64_t ui64;
+	int64_t i64;
+	float f;
+	double d;
+	long double ld;
+};
+
+struct off_list {
+	struct off_list *next;
+	char *name;
+	int64_t off;
+};
+
+struct off_list *alloc_off_list(char *name, int64_t off, struct off_list *head)
+{
+	struct off_list *ret = malloc(sizeof(struct off_list));
+	ret->name = name;
+	ret->off = off;
+	ret->next = head;
+	return ret;
+}
+
+int off_list_find(struct off_list *head, char *name, int64_t *off)
+{
+	for( ; head; head = head->next)
+		if(strcmp(head->name, name) == 0) {
+			*off = head->off;
+			return 1;
+		}
+	return 0;
+}
+
+int do_save(
+	struct off_list **list_head,
+	void *base,
+	uint64_t offset,
+	field_t field_type,
+	endian_t endian_mode,
+	char *name)
+{
+	union val_union value;
+	uint64_t off;
+
+	switch(field_type) {
+	case FIELD_U8:
+		memcpy(&value.ui8, base + offset, sizeof(value.ui8));
+		off = (int64_t)value.ui8;
+		break;
+
+	case FIELD_S8:
+		memcpy(&value.i8, base + offset, sizeof(value.i8));
+		off = (int64_t)value.i8;
+		break;
+
+	case FIELD_U16:
+		memcpy(&value.ui16, base + offset, sizeof(value.ui16));
+		conv_from_endian(endian_mode, &value.ui16, sizeof(value.ui16));
+		off = (int64_t)value.ui16;
+		break;
+
+	case FIELD_S16:
+		memcpy(&value.i16, base + offset, sizeof(value.i16));
+		conv_from_endian(endian_mode, &value.i16, sizeof(value.i16));
+		off = (int64_t)value.i16;
+		break;
+
+	case FIELD_U32:
+		memcpy(&value.ui32, base + offset, sizeof(value.ui32));
+		conv_from_endian(endian_mode, &value.ui32, sizeof(value.ui32));
+		off = (int64_t)value.ui32;
+		break;
+
+	case FIELD_S32:
+		memcpy(&value.i32, base + offset, sizeof(value.i32));
+		conv_from_endian(endian_mode, &value.i32, sizeof(value.i32));
+		off = (int64_t)value.i32;
+		break;
+
+	case FIELD_U64:
+		memcpy(&value.ui64, base + offset, sizeof(value.ui64));
+		conv_from_endian(endian_mode, &value.ui64, sizeof(value.ui64));
+		off = (int64_t)value.ui64;
+		break;
+
+	case FIELD_S64:
+		memcpy(&value.i64, base + offset, sizeof(value.i64));
+		conv_from_endian(endian_mode, &value.i64, sizeof(value.i64));
+		off = (int64_t)value.i64;
+		break;
+
+	default:
+		return 0;
+		break;
+	}
+
+	*list_head = alloc_off_list(name, off, *list_head);
+	return 1;
+}
+
 size_t do_print(
 	void *base,
 	uint64_t offset,
@@ -125,19 +236,7 @@ size_t do_print(
 	char *label)
 {
 	size_t status = 0;
-	union {
-		uint8_t ui8;
-		int8_t i8;
-		uint16_t ui16;
-		int16_t i16;
-		uint32_t ui32;
-		int32_t i32;
-		uint64_t ui64;
-		int64_t i64;
-		float f;
-		double d;
-		long double ld;
-	} value;
+	union val_union value;
 
 	printf("0x%16.16" PRIx64 ": ", offset);
 	switch(field_type) {
@@ -263,8 +362,10 @@ int main(int argc, char *argv[])
 	disp_t disp_fmt = DISP_HEX;
 	uint64_t offset = 0;
 	char *label = NULL;
+	struct off_list *saved_offsets;
+	long stepsize = 1;
 	
-	while((opt = getopt(argc, argv, "hi:f:e:d:o:l:p:")) != -1) {
+	while((opt = getopt(argc, argv, "hi:f:e:d:o:m:l:p:s:")) != -1) {
 		switch(opt) {
 		case 'h':
 			do_help();
@@ -337,55 +438,105 @@ int main(int argc, char *argv[])
 			}
 			break;
 
-		case 'o': {
-			bool relative = false;
-			ssize_t val;
-			errno = 0;
-			if(optarg[0] == '+')
-				relative = true;
+		case 'o':
+			{
+				bool relative = false;
+				bool align = false;
+				int64_t val;
 
-			errno = 0;
-			if(relative)
-				val = strtoll(optarg + 1, NULL, 0);
-			else
-				val = strtoll(optarg, NULL, 0);
-			if(errno == ERANGE) {
-				printf("bad offset specifier: %s\n", optarg);
-				goto finish;
+				if(optarg[0] == '+') {
+					optarg++;
+					relative = true;
+				} else if(optarg[0] == '/') {
+					optarg++;
+					align = true;
+				}
+
+				if(optarg[0] == '%') {
+					optarg++;
+					if(! off_list_find(saved_offsets, optarg, &val)) {
+						printf("unknown variable name: %s\n", optarg);
+						goto finish;
+					}
+				} else {
+					errno = 0;
+					val = strtoll(optarg, NULL, 0);
+					if(errno == ERANGE) {
+						printf("bad offset specifier: %s\n", optarg);
+						goto finish;
+					}
+				}
+
+				if(relative)
+					offset += val * stepsize;
+				else if(align)
+					offset += offset % (val * stepsize) == 0
+					          ? 0
+					          : (val * stepsize) - (offset % (val * stepsize));
+				else
+					offset = val * stepsize;
+
+				if(offset > infile_len) {
+					printf("offset exceeds infile bounds: %" PRIu64 "\n", offset);
+					goto finish;
+				}
 			}
+			break;
 
-			if(relative)
-				offset += val;
-			else 
-				offset = val;
-
-			if(offset > infile_len) {
-				printf("offset exceeds infile bounds: %" PRIu64 "\n", offset);
+		case 'm':
+			stepsize = strtol(optarg, NULL, 0);
+			if(stepsize == 0 || stepsize == ERANGE) {
+				printf("bad repeat specifier: %s\n", optarg);
 				goto finish;
 			}
 			break;
-		}
 
 		case 'l':
 			label = optarg;
 			break;
 
 		case 'p': {
-			size_t repeat = 1, n = 0;
-			errno = 0;
-			repeat = strtoll(optarg, NULL, 0);
-			if(repeat == 0 || errno == ERANGE) {
-				printf("bad repeat specifier: %s\n", optarg);
-				goto finish;
+			int64_t repeat;
+			size_t n = 0;
+
+			if(optarg[0] == '%') {
+				optarg++;
+				if(! off_list_find(saved_offsets, optarg, &repeat)) {
+					printf("unknown variable name: %s\n", optarg);
+					goto finish;
+				}
+				if(repeat < 0) {
+					printf("negative repeat value: %" PRId64 "\n", repeat);
+					goto finish;
+				}
+			} else {
+				errno = 0;
+				repeat = strtoll(optarg, NULL, 0);
+				if(errno == ERANGE) {
+					printf("bad repeat specifier: %s\n", optarg);
+					goto finish;
+				}
 			}
 
 			while(repeat--) {
-				offset += n;
 				n = do_print(infile, offset, field_type, endian_mode,
 				             disp_fmt, label);
+				offset += n;
 			}
 			break;
 		}
+
+		case 's':
+			if(! do_save(&saved_offsets, infile, offset, field_type, endian_mode,
+			             optarg)) {
+				printf("could not save into variable %s\n", optarg);
+				goto finish;
+			} else {
+				int64_t val;
+				off_list_find(saved_offsets, optarg, &val);
+				printf("(saved variable %s=%" PRId64 ")\n", optarg, val);
+			}
+			break;
 
 		default:
 			break;
