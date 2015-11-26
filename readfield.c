@@ -1,3 +1,4 @@
+#include <inttypes.h>
 #include <unistd.h>
 #include <stdio.h>
 #include <sys/mman.h>
@@ -6,8 +7,10 @@
 #include <fcntl.h>
 #include <stdint.h>
 #include <string.h>
+#include <strings.h>
 #include <stdbool.h>
 #include <errno.h>
+#include <stdlib.h>
 
 typedef enum {
 	FIELD_U8, FIELD_S8,
@@ -40,7 +43,7 @@ void do_help(void)
 	printf("-i <infile>      load specified input file\n");
 	printf("-f <field type>  u8 s8 u16 s16 u32 s32 u64 s64 str flt dbl ldbl\n");
 	printf("-e <endian>      b(ig) l(ittle) n(ative)\n");
-	printf("-d <disp fmt>    hex dec ascii\n");
+	printf("-d <disp fmt>    h(ex) d(ec) a(scii)\n");
 	printf("-o [+]<offset>   offset, '+' for relative to last specified\n");
 	printf("-l <label>       field label\n");
 	printf("-p <repeat>      print <repeat> times sequentially\n");
@@ -115,7 +118,7 @@ void conv_from_endian(endian_t end, void *buf, size_t len)
 
 size_t do_print(
 	void *base,
-	off_t offset,
+	uint64_t offset,
 	field_t field_type,
 	endian_t endian_mode,
 	disp_t disp_fmt,
@@ -136,76 +139,76 @@ size_t do_print(
 		long double ld;
 	} value;
 
-	printf("0x%16.16x: ", offset);
+	printf("0x%16.16" PRIx64 ": ", offset);
 	switch(field_type) {
 	case FIELD_U8:
 		memcpy(&value.ui8, base + offset, sizeof(value.ui8));
-		if(disp_fmt == DISP_HEX) printf("0x%x", value.ui8);
-		else if(disp_fmt == DISP_DEC) printf("%u", value.ui8);
+		if(disp_fmt == DISP_HEX) printf("0x%" PRIx8, value.ui8);
+		else if(disp_fmt == DISP_DEC) printf("%" PRIu8, value.ui8);
 		else if(disp_fmt == DISP_ASCII) print_char(value.ui8);
-		status = sizeof(typeof(value.ui8));
+		status = sizeof(value.ui8);
 		break;
 
 	case FIELD_S8:
 		memcpy(&value.i8, base + offset, sizeof(value.i8));
-		if(disp_fmt == DISP_HEX) printf("0x%x", value.i8);
-		else if(disp_fmt == DISP_DEC) printf("%d", value.i8);
+		if(disp_fmt == DISP_HEX) printf("0x%" PRIx8, value.i8);
+		else if(disp_fmt == DISP_DEC) printf("%" PRId8, value.i8);
 		else if(disp_fmt == DISP_ASCII) print_char(value.i8);
-		status = sizeof(typeof(value.i8));
+		status = sizeof(value.i8);
 		break;
 
 	case FIELD_U16:
 		memcpy(&value.ui16, base + offset, sizeof(value.ui16));
 		conv_from_endian(endian_mode, &value.ui16, sizeof(value.ui16));
-		if(disp_fmt == DISP_HEX) printf("0x%x", value.ui16);
-		else if(disp_fmt == DISP_DEC) printf("%u", value.ui16);
+		if(disp_fmt == DISP_HEX) printf("0x%" PRIx16, value.ui16);
+		else if(disp_fmt == DISP_DEC) printf("%" PRIu16, value.ui16);
 		else if(disp_fmt == DISP_ASCII) print_char(value.ui16);
-		status = sizeof(typeof(value.ui16));
+		status = sizeof(value.ui16);
 		break;
 
 	case FIELD_S16:
 		memcpy(&value.i16, base + offset, sizeof(value.i16));
 		conv_from_endian(endian_mode, &value.i16, sizeof(value.i16));
-		if(disp_fmt == DISP_HEX) printf("0x%x", value.i16);
-		else if(disp_fmt == DISP_DEC) printf("%d", value.i16);
+		if(disp_fmt == DISP_HEX) printf("0x%" PRIx16, value.i16);
+		else if(disp_fmt == DISP_DEC) printf("%" PRId16, value.i16);
 		else if(disp_fmt == DISP_ASCII) print_char(value.i16);
-		status = sizeof(typeof(value.i16));
+		status = sizeof(value.i16);
 		break;
 
 	case FIELD_U32:
 		memcpy(&value.ui32, base + offset, sizeof(value.ui32));
 		conv_from_endian(endian_mode, &value.ui32, sizeof(value.ui32));
-		if(disp_fmt == DISP_HEX) printf("0x%x", value.ui32);
-		else if(disp_fmt == DISP_DEC) printf("%u", value.ui32);
+		if(disp_fmt == DISP_HEX) printf("0x%" PRIx32, value.ui32);
+		else if(disp_fmt == DISP_DEC) printf("%" PRIu32, value.ui32);
 		else if(disp_fmt == DISP_ASCII) print_char(value.ui32);
-		status = sizeof(typeof(value.ui32));
+		status = sizeof(value.ui32);
 		break;
 
 	case FIELD_S32:
 		memcpy(&value.i32, base + offset, sizeof(value.i32));
 		conv_from_endian(endian_mode, &value.i32, sizeof(value.i32));
-		if(disp_fmt == DISP_HEX) printf("0x%x", value.i32);
-		else if(disp_fmt == DISP_DEC) printf("%d", value.i32);
+		if(disp_fmt == DISP_HEX) printf("0x%" PRIx32, value.i32);
+		else if(disp_fmt == DISP_DEC) printf("%" PRId32, value.i32);
 		else if(disp_fmt == DISP_ASCII) print_char(value.i32);
-		status = sizeof(typeof(value.i32));
+		status = sizeof(value.i32);
 		break;
 
 	case FIELD_U64:
 		memcpy(&value.ui64, base + offset, sizeof(value.ui64));
 		conv_from_endian(endian_mode, &value.ui64, sizeof(value.ui64));
-		if(disp_fmt == DISP_HEX) printf("0x%x", value.ui64);
-		else if(disp_fmt == DISP_DEC) printf("%u", value.ui64);
+		if(disp_fmt == DISP_HEX) printf("0x%" PRIx64, value.ui64);
+		else if(disp_fmt == DISP_DEC) printf("%" PRIu64, value.ui64);
 		else if(disp_fmt == DISP_ASCII) print_char(value.ui64);
-		status = sizeof(typeof(value.ui64));
+		status = sizeof(value.ui64);
 		break;
 
 	case FIELD_S64:
 		memcpy(&value.i64, base + offset, sizeof(value.i64));
 		conv_from_endian(endian_mode, &value.i64, sizeof(value.i64));
-		if(disp_fmt == DISP_HEX) printf("0x%x", value.i64);
-		else if(disp_fmt == DISP_DEC) printf("%d", value.i64);
+		if(disp_fmt == DISP_HEX) printf("0x%" PRIx64, value.i64);
+		else if(disp_fmt == DISP_DEC) printf("%" PRId64, value.i64);
 		else if(disp_fmt == DISP_ASCII) print_char(value.i64);
-		status = sizeof(typeof(value.i64));
+		status = sizeof(value.i64);
 		break;
 
 	case FIELD_STR:
@@ -219,7 +222,7 @@ size_t do_print(
 		if(disp_fmt == DISP_HEX) printf("0x%a", value.f);
 		else if(disp_fmt == DISP_DEC) printf("%e", value.f);
 		else if(disp_fmt == DISP_ASCII) printf("ascii?");
-		status = sizeof(typeof(value.f));
+		status = sizeof(value.f);
 		break;
 
 	case FIELD_DBL:
@@ -228,7 +231,7 @@ size_t do_print(
 		if(disp_fmt == DISP_HEX) printf("0x%a", value.d);
 		else if(disp_fmt == DISP_DEC) printf("%e", value.d);
 		else if(disp_fmt == DISP_ASCII) printf("ascii?");
-		status = sizeof(typeof(value.d));
+		status = sizeof(value.d);
 		break;
 
 	case FIELD_LDBL:
@@ -237,7 +240,7 @@ size_t do_print(
 		if(disp_fmt == DISP_HEX) printf("0x%La", value.ld);
 		else if(disp_fmt == DISP_DEC) printf("%Le", value.ld);
 		else if(disp_fmt == DISP_ASCII) printf("ascii?");
-		status = sizeof(typeof(value.ld));
+		status = sizeof(value.ld);
 		break;
 
 	default:
@@ -254,11 +257,11 @@ int main(int argc, char *argv[])
 	int opt;
 	int status = 0;
 	
-	int infd = -1; off_t infile_len; void *infile;
+	int infd = -1; uint64_t infile_len; void *infile;
 	field_t field_type = FIELD_U8;
 	endian_t endian_mode = END_NATIVE;
 	disp_t disp_fmt = DISP_HEX;
-	off_t offset = 0;
+	uint64_t offset = 0;
 	char *label = NULL;
 	
 	while((opt = getopt(argc, argv, "hi:f:e:d:o:l:p:")) != -1) {
@@ -271,7 +274,7 @@ int main(int argc, char *argv[])
 		case 'i': {
 			struct stat sb;
 			if(infd >= 0) {
-				if(status = munmap(infile, infile_len)) {
+				if((status = munmap(infile, infile_len))) {
 					perror("munmap()");
 					goto finish;
 				}
@@ -281,7 +284,7 @@ int main(int argc, char *argv[])
 				status = infd;
 				goto finish;
 			}
-			if(status = fstat(infd, &sb)) {
+			if((status = fstat(infd, &sb))) {
 				perror("fstat()");
 				goto finish;
 			}
@@ -309,7 +312,7 @@ int main(int argc, char *argv[])
 			else if(strcasecmp(optarg, "DBL") == 0) field_type = FIELD_DBL;
 			else if(strcasecmp(optarg, "LDBL") == 0) field_type = FIELD_LDBL;
 			else {
-				printf("bad field type specifier: %s\n");
+				printf("bad field type specifier: %s\n", optarg);
 				goto finish;
 			}
 			break;
@@ -319,17 +322,17 @@ int main(int argc, char *argv[])
 			else if(strncasecmp(optarg, "L", 1) == 0) endian_mode = END_LITTLE;
 			else if(strncasecmp(optarg, "B", 1) == 0) endian_mode = END_BIG;
 			else {
-				printf("bad endian specifier: %s\n");
+				printf("bad endian specifier: %s\n", optarg);
 				goto finish;
 			}
 			break;
 
 		case 'd':
-			if(strcasecmp(optarg, "HEX") == 0) disp_fmt = DISP_HEX;
-			else if(strcasecmp(optarg, "DEC") == 0) disp_fmt = DISP_DEC;
-			else if(strcasecmp(optarg, "ASCII") == 0) disp_fmt = DISP_ASCII;
+			if(strcasecmp(optarg, "H"/*hex*/) == 0) disp_fmt = DISP_HEX;
+			else if(strcasecmp(optarg, "D"/*dec*/) == 0) disp_fmt = DISP_DEC;
+			else if(strcasecmp(optarg, "A"/*ascii*/) == 0) disp_fmt = DISP_ASCII;
 			else {
-				printf("bad display specifier: %s\n");
+				printf("bad display specifier: %s\n", optarg);
 				goto finish;
 			}
 			break;
@@ -340,13 +343,14 @@ int main(int argc, char *argv[])
 			errno = 0;
 			if(optarg[0] == '+')
 				relative = true;
+
+			errno = 0;
 			if(relative)
 				val = strtoll(optarg + 1, NULL, 0);
 			else
 				val = strtoll(optarg, NULL, 0);
-
 			if(errno == ERANGE) {
-				printf("bad offset specifier: %s\n");
+				printf("bad offset specifier: %s\n", optarg);
 				goto finish;
 			}
 
@@ -356,8 +360,7 @@ int main(int argc, char *argv[])
 				offset = val;
 
 			if(offset > infile_len) {
-				printf("offset exceeds infile bounds: %llu\n",
-				       (unsigned long long) offset);
+				printf("offset exceeds infile bounds: %" PRIu64 "\n", offset);
 				goto finish;
 			}
 			break;
@@ -372,7 +375,7 @@ int main(int argc, char *argv[])
 			errno = 0;
 			repeat = strtoll(optarg, NULL, 0);
 			if(repeat == 0 || errno == ERANGE) {
-				printf("bad repeat specifier: %s\n");
+				printf("bad repeat specifier: %s\n", optarg);
 				goto finish;
 			}
 
